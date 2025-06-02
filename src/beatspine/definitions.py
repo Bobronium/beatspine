@@ -117,6 +117,8 @@ class TimeRange:
 
     start: Milliseconds
     duration: Milliseconds
+    start_frame: int = 0
+    duration_frames: int = 0
 
     @property
     def end(self) -> Milliseconds:
@@ -199,6 +201,8 @@ class TimelineMarker:
     position: Milliseconds
     name: str
     duration: Milliseconds = Decimal(1000) / 60  # 1 frame default
+    position_frame: int = 0
+    duration_frames: int = 1
 
 
 @dataclass(slots=True, frozen=True)
@@ -228,6 +232,7 @@ class TimelineProject:
 
     name: str
     duration: Milliseconds
+    duration_frames: int = 0
     frame_rate: int
     dimensions: Dimensions
     elements: list[TimelineElement]

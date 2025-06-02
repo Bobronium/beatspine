@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -59,7 +60,8 @@ class FCPXMLExporter:
             project_elem, "sequence",
             attrib={
                 "format": "r1",
-                "duration": f"{int(project.duration / 1000 * project.frame_rate)}s",
+                # project.duration_frames is content only, gap_duration is in ms
+                "duration": f"{project.duration_frames + int(Decimal(project.gap_duration) / 1000 * Decimal(project.frame_rate))}s",
                 "tcStart": "0s"
             }
         )
@@ -117,8 +119,8 @@ class FCPXMLExporter:
             attrib={
                 "name": element.name,
                 "ref": element.asset.uid,
-                "offset": f"{int(element.time_range.start / 1000 * project.frame_rate)}s",
-                "duration": f"{int(element.time_range.duration / 1000 * project.frame_rate)}s"
+                "offset": f"{element.time_range.start_frame}s",
+                "duration": f"{element.time_range.duration_frames}s"
             }
         )
 

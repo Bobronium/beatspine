@@ -280,15 +280,15 @@ class ResolveSync:
         tolerance = 0.5  # Sub-frame precision
 
         # Check timeline position
-        current_start = Decimal(current_item.GetStart(True))
-        target_start = target_element.time_range.start / 1000 * frame_rate
+        current_start = Decimal(current_item.GetStart(True)) # Assuming GetStart returns frame count
+        target_start = Decimal(target_element.time_range.start_frame)
 
         if abs(current_start - target_start) > tolerance:
             return True
 
         # Check duration
-        current_duration = current_item.GetDuration(True)
-        target_duration = target_element.time_range.duration / 1000 * frame_rate
+        current_duration = Decimal(current_item.GetDuration(True)) # Assuming GetDuration returns frame count
+        target_duration = Decimal(target_element.time_range.duration_frames)
 
         return abs(current_duration - target_duration) > tolerance
 
@@ -437,12 +437,9 @@ class ResolveSync:
                     continue
 
                 media_item = media_items[element.asset.uid]
-                start_frame = int(element.time_range.start / 1000 * project.frame_rate)
-                # element.time_range.duration is Decimal (Milliseconds)
-                # project.frame_rate is int
-                duration_frames = int(
-                    element.time_range.duration / Decimal(1000) * Decimal(project.frame_rate)
-                )
+                # Use direct frame values
+                start_frame = element.time_range.start_frame
+                duration_frames = element.time_range.duration_frames
 
                 clip_info = {
                     "mediaPoolItem": media_item,
@@ -482,77 +479,75 @@ class ResolveSync:
         # project.gap_duration is in ms. Convert to seconds, then multiply by frame rate.
         gap_frames = int(Decimal(project.gap_duration) / 1000 * Decimal(project.frame_rate))
 
-        # Catalog existing beatspine beat markers
-        existing_markers = timeline.GetMarkers()
-        current_beat_markers: dict[int, float] = {}  # beat_index -> frame_position
+        # Catalog existing beatspine project markers (now identified by name)
+        existing_resolve_markers = timeline.GetMarkers()
+        current_project_markers: dict[str, float] = {}  # marker.name -> frame_position
 
-        for frame_id, marker_info in existing_markers.items():
+        for frame_id, marker_info in existing_resolve_markers.items():
             custom_data = marker_info.get("customData", "")
-            if custom_data.startswith("beatspine:beat:"):
+            if custom_data.startswith("beatspine:marker:"):
                 try:
-                    beat_index = int(custom_data.split(":")[-1])
-                    current_beat_markers[beat_index] = float(frame_id)
-                except (ValueError, IndexError):
-                    # Remove malformed beatspine markers
+                    # Extract name from customData (e.g., "beatspine:marker:Beat 1")
+                    marker_name_from_data = custom_data.split(":", 2)[-1]
+                    current_project_markers[marker_name_from_data] = float(frame_id)
+                except IndexError:
+                    # Malformed customData, potentially remove or log
                     timeline.DeleteMarkerAtFrame(frame_id)
+            elif custom_data.startswith("beatspine:beat:"): # Handle old beat markers
+                # These are old markers, they will be removed by the diff logic
+                # if not found in the new target_project_markers by name.
+                # Or, explicitly delete them if desired: timeline.DeleteMarkerAtFrame(frame_id)
+                pass
 
-        # Compute required changes
-        target_markers: dict[int, float] = {} # Storing target frames as float for consistency with current_beat_markers
-        for beat in project.beats:
-            # Use beat.frame (frame number of beat without gap) and add gap_frames
-            target_frame = beat.frame + gap_frames
-            target_markers[beat.index] = float(target_frame) # Store as float
 
-        current_indices = set(current_beat_markers.keys())
-        target_indices = set(target_markers.keys())
+        # Compute required changes based on project.markers
+        target_project_markers: dict[str, float] = {} # marker.name -> frame_position
+        for marker_obj in project.markers: # project.markers contains TimelineMarker instances
+            # position_frame already includes the gap_frames calculation from core.py
+            target_frame = marker_obj.position_frame
+            target_project_markers[marker_obj.name] = float(target_frame)
+
+        current_marker_names = set(current_project_markers.keys())
+        target_marker_names = set(target_project_markers.keys())
 
         # Remove obsolete markers
-        obsolete_indices = current_indices - target_indices
-        for beat_index in obsolete_indices:
-            frame_position = current_beat_markers[beat_index]
-            timeline.DeleteMarkerAtFrame(frame_position)
+        obsolete_marker_names = current_marker_names - target_marker_names
+        for marker_name in obsolete_marker_names:
+            frame_position = current_project_markers[marker_name]
+            timeline.DeleteMarkerAtFrame(int(frame_position))
 
         # Add new markers and update moved markers
-        for beat_index in target_indices:
-            target_frame = target_markers[beat_index]
-            current_frame = current_beat_markers.get(beat_index)
+        markers_added_count = 0
+        markers_updated_count = 0
+        for marker_name in target_marker_names:
+            target_frame = target_project_markers[marker_name]
+            current_frame = current_project_markers.get(marker_name)
 
-            # Check if marker needs update (new or moved)
+            marker_obj = next((m for m in project.markers if m.name == marker_name), None)
+            if not marker_obj: # Should not happen if target_marker_names is derived from project.markers
+                continue
+
             if current_frame is None or abs(current_frame - target_frame) > 0.5:
-                # Remove old marker if it exists but moved
                 if current_frame is not None:
                     timeline.DeleteMarkerAtFrame(int(current_frame))
+                    markers_updated_count +=1
+                else:
+                    markers_added_count +=1
 
-                # Add marker at correct position
-                beat = project.beats[beat_index]
-                marker_name = f"Beat {beat.index + 1}"
-                note = (
-                    f"Photos: {beat.date_range.format_range()}"
-                    if beat.date_range
-                    else ""
-                )
+                # Resolve's AddMarker duration is in seconds
+                marker_duration_seconds = Decimal(marker_obj.duration_frames) / Decimal(project.frame_rate)
 
                 timeline.AddMarker(
                     target_frame,
-                    "Yellow",
-                    marker_name,
-                    note,
-                    1.0,
-                    f"beatspine:beat:{beat.index}",
+                    "Yellow", # Default color
+                    marker_obj.name,
+                    marker_obj.name, # Using name as note for simplicity
+                    float(marker_duration_seconds),
+                    f"beatspine:marker:{marker_obj.name}", # New customData format
                 )
 
-        added_count = len(target_indices - current_indices)
-        removed_count = len(obsolete_indices)
-        updated_count = len(
-            [
-                i
-                for i in target_indices & current_indices
-                if abs(current_beat_markers[i] - target_markers[i]) > 0.5
-            ]
-        )
-
         console.print(
-            f"🎯 Beat markers: +{added_count} -{removed_count} ~{updated_count}",
+            f"🎯 Project markers: +{markers_added_count} -{len(obsolete_marker_names)} ~{markers_updated_count}",
             style="dim",
         )
 
@@ -756,4 +751,4 @@ class ResolveSync:
             console.print(f"  🔄 Update {len(changes.items_to_update)} item positions")
 
         if changes.markers_to_sync:
-            console.print(f"  🎯 Sync {len(project.beats)} beat markers")
+            console.print(f"  🎯 Sync {len(project.markers)} project markers")

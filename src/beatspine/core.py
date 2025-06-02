@@ -652,8 +652,12 @@ def create_timeline_project(
         time_gap = TimeGap.none()
 
     # Extract audio duration
-    duration_sec = get_audio_duration(soundtrack_path)
+    duration_sec = get_audio_duration(soundtrack_path) # This is for the main beat-determining audio
     echo(f"Soundtrack duration: {duration_sec:.2f} seconds")
+
+    # Calculate gap in frames early
+    # gap_sec is Decimal, frame_rate is int
+    gap_frames = int(gap_sec * Decimal(frame_rate))
 
     # Load photos and their dates
     photo_metadata = load_photos(photo_dir, supported_extensions)
@@ -721,10 +725,21 @@ def create_timeline_project(
         duration_sec * 1000,
     )
 
+    # Audio element calculations
+    audio_start_ms = gap_sec * 1000
+    audio_duration_ms = duration_sec * 1000 # Using main beat-determining audio duration
+    audio_start_frame = gap_frames
+    audio_duration_frames = int(Decimal(duration_sec) * Decimal(frame_rate))
+
     elements.append(
         TimelineElement(
             asset=audio_asset,
-            time_range=TimeRange(gap_sec * 1000, duration_sec * 1000),
+            time_range=TimeRange(
+                start=audio_start_ms,
+                duration=audio_duration_ms,
+                start_frame=audio_start_frame,
+                duration_frames=audio_duration_frames,
+            ),
             track=-1,  # Convention: negative tracks for audio
             media_type=MediaType.AUDIO,
         )
@@ -733,24 +748,22 @@ def create_timeline_project(
     # Create photo elements
     for placement in placements:
         # Frame-based calculations for TimeRange
-        beat_start_frame = beats[placement.beat_index].frame
-        # gap_sec is Decimal, frame_rate is int
-        gap_frames = int(gap_sec * Decimal(frame_rate))
-        element_start_frame_final = beat_start_frame + gap_frames
-        # Ensure start_milliseconds is Decimal for TimeRange
-        start_milliseconds = (Decimal(element_start_frame_final) / Decimal(frame_rate)) * Decimal(1000)
+        # beats[placement.beat_index].frame is the beat's own frame number (without gap)
+        start_frame = beats[placement.beat_index].frame + gap_frames
+        duration_frames = element_frame_durations[placement.beat_index]
 
-        # Use the new element_frame_durations
-        duration_in_frames = element_frame_durations[placement.beat_index]
-        # Ensure duration_milliseconds is Decimal for TimeRange
-        duration_milliseconds = (Decimal(duration_in_frames) / Decimal(frame_rate)) * Decimal(1000)
+        # Recalculate ms based on these frame values for consistency
+        start_ms = (Decimal(start_frame) / Decimal(frame_rate)) * Decimal(1000)
+        duration_ms = (Decimal(duration_frames) / Decimal(frame_rate)) * Decimal(1000)
 
         elements.append(
             TimelineElement(
                 asset=placement.asset,
                 time_range=TimeRange(
-                    start=start_milliseconds,
-                    duration=duration_milliseconds,
+                    start=start_ms,
+                    duration=duration_ms,
+                    start_frame=start_frame,
+                    duration_frames=duration_frames,
                 ),
                 track=1,
                 media_type=MediaType.VIDEO,
@@ -766,27 +779,35 @@ def create_timeline_project(
     # Create beat markers
     effective_beats = beats[start_offset_beats : len(beats) - end_offset_beats]
     for i, beat in enumerate(effective_beats):
-        absolute_beat_index = i + start_offset_beats
+        absolute_beat_index = i + start_offset_beats # This is the original index in the full 'beats' list
 
         # Frame-based calculation for marker position
-        beat_frame = beat.frame  # beat is a BeatInfo object
-        # gap_sec is Decimal, frame_rate is int
-        gap_frames = int(gap_sec * Decimal(frame_rate))
-        marker_frame_final = beat_frame + gap_frames
-        # Ensure position_milliseconds is Decimal for TimelineMarker
-        position_milliseconds = (Decimal(marker_frame_final) / Decimal(frame_rate)) * Decimal(1000)
+        # 'beat.frame' is the frame of the beat from 'effective_beats' (already offset if applicable in its value)
+        marker_position_frame = beat.frame + gap_frames
+        marker_duration_frames = 1  # Default specified
+
+        # Recalculate ms values based on frame values
+        marker_position_ms = (Decimal(marker_position_frame) / Decimal(frame_rate)) * Decimal(1000)
+        marker_duration_ms = (Decimal(marker_duration_frames) / Decimal(frame_rate)) * Decimal(1000)
 
         markers.append(
             TimelineMarker(
-                position=position_milliseconds,
+                position=marker_position_ms,
                 name=f"Beat {absolute_beat_index + 1}",
+                duration=marker_duration_ms,
+                position_frame=marker_position_frame,
+                duration_frames=marker_duration_frames,
             )
         )
+
+    # Calculate project duration in frames (based on content, excluding final gap for this definition)
+    project_content_duration_frames = int(Decimal(duration_sec) * Decimal(frame_rate))
 
     # Create timeline project
     return TimelineProject(
         name=project_name,
-        duration=(duration_sec + gap_sec) * 1000,
+        duration=(duration_sec + gap_sec) * 1000, # Total timeline duration in ms, including gap
+        duration_frames=project_content_duration_frames,
         frame_rate=frame_rate,
         dimensions=dimensions,
         elements=elements,
