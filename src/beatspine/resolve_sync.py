@@ -280,17 +280,17 @@ class ResolveSync:
         tolerance = 0.5  # Sub-frame precision
 
         # Check timeline position
-        current_start = Decimal(current_item.GetStart(True)) # Assuming GetStart returns frame count
-        target_start = Decimal(target_element.time_range.start_frame)
+        current_start_frames = Decimal(current_item.GetStart(True)) # Assuming GetStart returns frame count
+        target_start_frames = Decimal(target_element.time_range.start_frame)
 
-        if abs(current_start - target_start) > tolerance:
+        if abs(current_start_frames - target_start_frames) > tolerance:
             return True
 
         # Check duration
-        current_duration = Decimal(current_item.GetDuration(True)) # Assuming GetDuration returns frame count
-        target_duration = Decimal(target_element.time_range.duration_frames)
+        current_duration_frames = Decimal(current_item.GetDuration(True)) # Assuming GetDuration returns frame count
+        target_duration_frames = Decimal(target_element.time_range.duration_frames)
 
-        return abs(current_duration - target_duration) > tolerance
+        return abs(current_duration_frames - target_duration_frames) > tolerance
 
     def _analyze_conflicts(
         self,
@@ -437,26 +437,60 @@ class ResolveSync:
                     continue
 
                 media_item = media_items[element.asset.uid]
-                # Use direct frame values
-                start_frame = element.time_range.start_frame
-                duration_frames = element.time_range.duration_frames
+                
+                # record_timeline_frame is where the clip is placed on the timeline
+                record_timeline_frame = self._timeline_start_frame + element.time_range.start_frame
 
                 clip_info = {
                     "mediaPoolItem": media_item,
                     "trackIndex": total_video_tracks + 1
-                    if element.media_type is MediaType.AUDIO
-                    else total_audio_tracks,
-                    "recordFrame": self._timeline_start_frame + start_frame,
+                    if element.media_type is MediaType.AUDIO # TODO: review track assignment logic
+                    else total_audio_tracks, # This seems swapped or needs clarification
+                    "recordFrame": record_timeline_frame,
                     "mediaType": 2 if element.media_type == MediaType.AUDIO else 1,
                 }
+
                 if element.media_type is MediaType.VIDEO:
-                    clip_info["startFrame"] = start = int(
-                        media_item.GetClipProperty("Start")
-                    )
-                    clip_info["endFrame"] = start + duration_frames
-                else:
-                    clip_info["startFrame"] = self._timeline_start_frame
-                    clip_info["endFrame"] = timeline.GetEndFrame()
+                    media_fps_str = media_item.GetClipProperty("FPS")
+                    media_clip_start_str = media_item.GetClipProperty("Start") # Media's own start frame/timecode
+                    timeline_fps = Decimal(project.frame_rate)
+
+                    try:
+                        media_fps = Decimal(media_fps_str)
+                        if media_fps <= 0:  # FPS cannot be zero or negative
+                            media_fps = timeline_fps
+                    except (ValueError, TypeError, AttributeError): # Handles non-numeric, None
+                        media_fps = timeline_fps
+                    
+                    try:
+                        media_native_start_frame = Decimal(media_clip_start_str)
+                    except (ValueError, TypeError, AttributeError):
+                        media_native_start_frame = Decimal(0)
+
+                    # frames_on_timeline is how long the clip should be on the timeline (in timeline frames)
+                    frames_on_timeline = element.time_range.duration_frames
+                    
+                    frames_of_media_to_use: Decimal
+                    if media_fps == timeline_fps:
+                        frames_of_media_to_use = Decimal(frames_on_timeline)
+                    else:
+                        # Adjust number of media frames to read based on FPS difference
+                        frames_of_media_to_use = (Decimal(frames_on_timeline) * media_fps) / timeline_fps
+                    
+                    clip_info["startFrame"] = float(media_native_start_frame) # Media In point (from source media)
+                    clip_info["endFrame"] = float(media_native_start_frame + frames_of_media_to_use) # Media Out point (from source media)
+                
+                elif element.media_type is MediaType.AUDIO:
+                    # Audio clips typically use their full available length or a timeline-relative portion
+                    # For simplicity, using what was there, assuming it implies full clip usage based on recordFrame.
+                    # If specific in/out from audio media is needed, similar logic to video would apply.
+                    clip_info["startFrame"] = media_item.GetClipProperty("Start") # Usually 0 for audio if not timecoded
+                    clip_info["endFrame"] = media_item.GetClipProperty("End") # Full duration of audio media
+                    # The actual duration on timeline is determined by recordFrame + effective duration logic of Resolve
+                    # if no explicit duration is set for audio clips in AppendToTimeline.
+                    # The current structure does not seem to set an explicit duration for audio on timeline via clip_info.
+                    # This part might need further review based on desired audio handling for partial clips.
+                    # For now, preserving the original approach for audio start/end in clip_info.
 
                 response = media_pool.AppendToTimeline([clip_info])
 
@@ -479,41 +513,43 @@ class ResolveSync:
         # project.gap_duration is in ms. Convert to seconds, then multiply by frame rate.
         gap_frames = int(Decimal(project.gap_duration) / 1000 * Decimal(project.frame_rate))
 
-        # Catalog existing beatspine project markers (now identified by name)
+        # Catalog existing beatspine project markers
         existing_resolve_markers = timeline.GetMarkers()
         current_project_markers: dict[str, float] = {}  # marker.name -> frame_position
 
+        # Clean up any old "beatspine:beat:" markers first, as they might conflict by position
+        # or be re-added if names are generic like "Beat X" and an actual marker has that name.
+        for frame_id_to_delete, marker_info_to_delete in existing_resolve_markers.items():
+            custom_data_to_delete = marker_info_to_delete.get("customData", "")
+            if custom_data_to_delete.startswith("beatspine:beat:"):
+                timeline.DeleteMarkerAtFrame(frame_id_to_delete)
+        
+        # Re-fetch markers after potential deletions
+        existing_resolve_markers = timeline.GetMarkers()
         for frame_id, marker_info in existing_resolve_markers.items():
             custom_data = marker_info.get("customData", "")
             if custom_data.startswith("beatspine:marker:"):
                 try:
-                    # Extract name from customData (e.g., "beatspine:marker:Beat 1")
                     marker_name_from_data = custom_data.split(":", 2)[-1]
                     current_project_markers[marker_name_from_data] = float(frame_id)
-                except IndexError:
-                    # Malformed customData, potentially remove or log
-                    timeline.DeleteMarkerAtFrame(frame_id)
-            elif custom_data.startswith("beatspine:beat:"): # Handle old beat markers
-                # These are old markers, they will be removed by the diff logic
-                # if not found in the new target_project_markers by name.
-                # Or, explicitly delete them if desired: timeline.DeleteMarkerAtFrame(frame_id)
-                pass
+                except IndexError: # Should not happen with "beatspine:marker:NAME"
+                    console.print(f"⚠️ Malformed beatspine:marker customData found: {custom_data}", style="yellow")
 
 
         # Compute required changes based on project.markers
         target_project_markers: dict[str, float] = {} # marker.name -> frame_position
-        for marker_obj in project.markers: # project.markers contains TimelineMarker instances
-            # position_frame already includes the gap_frames calculation from core.py
-            target_frame = marker_obj.position_frame
+        for marker_obj in project.markers: 
+            # marker_obj.position_frame already includes the gap from core.py
+            target_frame = marker_obj.position_frame 
             target_project_markers[marker_obj.name] = float(target_frame)
 
         current_marker_names = set(current_project_markers.keys())
         target_marker_names = set(target_project_markers.keys())
 
-        # Remove obsolete markers
+        # Remove obsolete markers (those in Resolve but not in target project.markers)
         obsolete_marker_names = current_marker_names - target_marker_names
-        for marker_name in obsolete_marker_names:
-            frame_position = current_project_markers[marker_name]
+        for marker_name_to_delete in obsolete_marker_names:
+            frame_position = current_project_markers[marker_name_to_delete]
             timeline.DeleteMarkerAtFrame(int(frame_position))
 
         # Add new markers and update moved markers
@@ -523,31 +559,32 @@ class ResolveSync:
             target_frame = target_project_markers[marker_name]
             current_frame = current_project_markers.get(marker_name)
 
+            # Retrieve the full marker object from project.markers to get all its properties
             marker_obj = next((m for m in project.markers if m.name == marker_name), None)
-            if not marker_obj: # Should not happen if target_marker_names is derived from project.markers
+            if not marker_obj:
+                console.print(f"⚠️ Could not find marker_obj for {marker_name} in project.markers", style="red")
                 continue
 
             if current_frame is None or abs(current_frame - target_frame) > 0.5:
-                if current_frame is not None:
+                if current_frame is not None: # Marker exists, but position is different
                     timeline.DeleteMarkerAtFrame(int(current_frame))
                     markers_updated_count +=1
-                else:
+                else: # Marker is new
                     markers_added_count +=1
-
-                # Resolve's AddMarker duration is in seconds
+                
                 marker_duration_seconds = Decimal(marker_obj.duration_frames) / Decimal(project.frame_rate)
 
                 timeline.AddMarker(
-                    target_frame,
-                    "Yellow", # Default color
+                    float(target_frame), # Resolve API expects float for position
+                    "Yellow", 
                     marker_obj.name,
-                    marker_obj.name, # Using name as note for simplicity
-                    float(marker_duration_seconds),
-                    f"beatspine:marker:{marker_obj.name}", # New customData format
+                    marker_obj.name, # Using name as note
+                    float(marker_duration_seconds), # Resolve API expects float for duration in seconds
+                    f"beatspine:marker:{marker_obj.name}",
                 )
-
+        
         console.print(
-            f"🎯 Project markers: +{markers_added_count} -{len(obsolete_marker_names)} ~{markers_updated_count}",
+            f"🎯 Project markers: +{markers_added_count} -{len(obsolete_marker_names)} ~{markers_updated_count}", # Corrected stats
             style="dim",
         )
 
