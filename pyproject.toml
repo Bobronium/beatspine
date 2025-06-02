@@ -1,5 +1,5 @@
 [project]
-name = "beatliner"
+name = "beatlapse"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.scripts]
-beatliner = "beatliner:main"
+beatlapse = "beatlapse:main"
 
 [build-system]
 requires = ["hatchling"]

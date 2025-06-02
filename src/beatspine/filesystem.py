@@ -20,15 +20,15 @@ from PIL import Image
 from mutagen import File as MutagenFile
 import mactime.core
 
-from beatliner.console import error
+from beatlapse.console import error
 
-from beatliner.console import warning
-from beatliner.constants import FINDER_COMMENT_ATTR
-from beatliner.constants import UUID_NAMESPACE
-from beatliner.typehints import Seconds
+from beatlapse.console import warning
+from beatlapse.constants import FINDER_COMMENT_ATTR
+from beatlapse.constants import UUID_NAMESPACE
+from beatlapse.typehints import Seconds
 
 if TYPE_CHECKING:
-    from beatliner.definitions import Dimensions
+    from beatlapse.definitions import Dimensions
 
 
 def generate_deterministic_uid(path: Path, method: str = "inode") -> str:
@@ -58,7 +58,7 @@ def generate_deterministic_uid(path: Path, method: str = "inode") -> str:
 
 def detect_image_dimensions(path: Path) -> Dimensions | None:
     """Detect image dimensions using PIL."""
-    from beatliner.definitions import Dimensions
+    from beatlapse.definitions import Dimensions
 
     try:
         with Image.open(path) as img:

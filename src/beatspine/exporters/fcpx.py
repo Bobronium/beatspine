@@ -23,18 +23,18 @@ from xml.etree import ElementTree as ET
 from xml.etree import ElementTree as ET
 from xml.etree import ElementTree as ET
 
-from beatliner.definitions import MediaAsset
-from beatliner.definitions import MediaType
-from beatliner.definitions import MediaType
-from beatliner.definitions import MediaType
-from beatliner.definitions import MediaType
-from beatliner.definitions import TimelineElement
-from beatliner.definitions import TimelineElement
-from beatliner.definitions import TimelineProject
-from beatliner.definitions import TimelineProject
-from beatliner.definitions import TimelineProject
-from beatliner.definitions import TimelineProject
-from beatliner.console import echo
+from beatlapse.definitions import MediaAsset
+from beatlapse.definitions import MediaType
+from beatlapse.definitions import MediaType
+from beatlapse.definitions import MediaType
+from beatlapse.definitions import MediaType
+from beatlapse.definitions import TimelineElement
+from beatlapse.definitions import TimelineElement
+from beatlapse.definitions import TimelineProject
+from beatlapse.definitions import TimelineProject
+from beatlapse.definitions import TimelineProject
+from beatlapse.definitions import TimelineProject
+from beatlapse.console import echo
 
 
 class FCPXMLExporter:

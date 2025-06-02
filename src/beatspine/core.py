@@ -11,36 +11,36 @@ from PIL import ImageDraw
 from PIL import ImageFont
 from tqdm import tqdm
 
-from beatliner.console import echo
+from beatlapse.console import echo
 
-from beatliner.console import error
+from beatlapse.console import error
 
-from beatliner.console import warning
-from beatliner.constants import DEFAULT_END_OFFSET_BEATS
-from beatliner.constants import DEFAULT_FPS
-from beatliner.constants import DEFAULT_GAP_SEC
-from beatliner.constants import DEFAULT_START_OFFSET_BEATS
-from beatliner.constants import SUPPORTED_IMAGE_EXTENSIONS
-from beatliner.definitions import BeatInfo
-from beatliner.definitions import DateRange
-from beatliner.definitions import Dimensions
-from beatliner.definitions import MediaAsset
-from beatliner.definitions import MediaType
-from beatliner.definitions import PhotoCluster
-from beatliner.definitions import PhotoPlacement
-from beatliner.definitions import PlaceholderMode
-from beatliner.definitions import TimeGap
-from beatliner.definitions import TimeRange
-from beatliner.definitions import TimeUnit
-from beatliner.definitions import TimelineElement
-from beatliner.definitions import TimelineMarker
-from beatliner.definitions import TimelineProject
-from beatliner.filesystem import generate_deterministic_uid
-from beatliner.filesystem import get_audio_duration
-from beatliner.filesystem import get_finder_comment
-from beatliner.filesystem import get_photo_date
-from beatliner.typehints import PhotoMetadata
-from beatliner.typehints import Seconds
+from beatlapse.console import warning
+from beatlapse.constants import DEFAULT_END_OFFSET_BEATS
+from beatlapse.constants import DEFAULT_FPS
+from beatlapse.constants import DEFAULT_GAP_SEC
+from beatlapse.constants import DEFAULT_START_OFFSET_BEATS
+from beatlapse.constants import SUPPORTED_IMAGE_EXTENSIONS
+from beatlapse.definitions import BeatInfo
+from beatlapse.definitions import DateRange
+from beatlapse.definitions import Dimensions
+from beatlapse.definitions import MediaAsset
+from beatlapse.definitions import MediaType
+from beatlapse.definitions import PhotoCluster
+from beatlapse.definitions import PhotoPlacement
+from beatlapse.definitions import PlaceholderMode
+from beatlapse.definitions import TimeGap
+from beatlapse.definitions import TimeRange
+from beatlapse.definitions import TimeUnit
+from beatlapse.definitions import TimelineElement
+from beatlapse.definitions import TimelineMarker
+from beatlapse.definitions import TimelineProject
+from beatlapse.filesystem import generate_deterministic_uid
+from beatlapse.filesystem import get_audio_duration
+from beatlapse.filesystem import get_finder_comment
+from beatlapse.filesystem import get_photo_date
+from beatlapse.typehints import PhotoMetadata
+from beatlapse.typehints import Seconds
 
 
 def parse_beat_anchor(comment: str) -> int | None:

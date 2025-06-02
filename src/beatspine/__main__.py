@@ -17,7 +17,7 @@ by building an intermediate representation of photo timelines synchronized to be
 
 from __future__ import annotations
 
-from beatliner import main
+from beatlapse import main
 
 
 if __name__ == "__main__":
