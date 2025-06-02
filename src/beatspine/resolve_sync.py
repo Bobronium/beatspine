@@ -444,8 +444,8 @@ class ResolveSync:
                 clip_info = {
                     "mediaPoolItem": media_item,
                     "trackIndex": total_video_tracks + 1
-                    if element.media_type is MediaType.AUDIO  # TODO: review track assignment logic
-                    else total_audio_tracks,  # This seems swapped or needs clarification
+                    if element.media_type is MediaType.AUDIO # TODO: review track assignment logic
+                    else total_audio_tracks, # This seems swapped or needs clarification
                     "recordFrame": record_timeline_frame,
                     "mediaType": 2 if element.media_type == MediaType.AUDIO else 1,
                 }
