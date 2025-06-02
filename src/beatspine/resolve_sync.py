@@ -437,31 +437,35 @@ class ResolveSync:
                     continue
 
                 media_item = media_items[element.asset.uid]
-                
+
                 # record_timeline_frame is where the clip is placed on the timeline
-                record_timeline_frame = self._timeline_start_frame + element.time_range.start_frame
+                record_timeline_frame = (
+                    self._timeline_start_frame + element.time_range.start_frame
+                )
 
                 clip_info = {
                     "mediaPoolItem": media_item,
-                    "trackIndex": total_video_tracks + 1
-                    if element.media_type is MediaType.AUDIO # TODO: review track assignment logic
-                    else total_audio_tracks, # This seems swapped or needs clarification
+                    "trackIndex": total_video_tracks
+                    if element.media_type is MediaType.VIDEO
+                    else total_audio_tracks,
                     "recordFrame": record_timeline_frame,
                     "mediaType": 2 if element.media_type == MediaType.AUDIO else 1,
                 }
 
                 if element.media_type is MediaType.VIDEO:
                     media_fps_str = media_item.GetClipProperty("FPS")
-                    media_clip_start_str = media_item.GetClipProperty("Start") # Media's own start frame/timecode
+                    media_clip_start_str = media_item.GetClipProperty(
+                        "Start"
+                    )  # Media's own start frame/timecode
                     timeline_fps = Decimal(project.frame_rate)
 
                     try:
                         media_fps = Decimal(media_fps_str)
                         if media_fps <= 0:  # FPS cannot be zero or negative
                             media_fps = timeline_fps
-                    except (ValueError, TypeError, AttributeError): # Handles non-numeric, None
+                    except (ValueError, TypeError, AttributeError):
                         media_fps = timeline_fps
-                    
+
                     try:
                         media_native_start_frame = Decimal(media_clip_start_str)
                     except (ValueError, TypeError, AttributeError):
@@ -469,28 +473,26 @@ class ResolveSync:
 
                     # frames_on_timeline is how long the clip should be on the timeline (in timeline frames)
                     frames_on_timeline = element.time_range.duration_frames
-                    
+
                     frames_of_media_to_use: Decimal
                     if media_fps == timeline_fps:
                         frames_of_media_to_use = Decimal(frames_on_timeline)
                     else:
                         # Adjust number of media frames to read based on FPS difference
-                        frames_of_media_to_use = (Decimal(frames_on_timeline) * media_fps) / timeline_fps
-                    
-                    clip_info["startFrame"] = float(media_native_start_frame) # Media In point (from source media)
-                    clip_info["endFrame"] = float(media_native_start_frame + frames_of_media_to_use) # Media Out point (from source media)
-                
+                        frames_of_media_to_use = (
+                            Decimal(frames_on_timeline) * media_fps
+                        ) / timeline_fps
+
+                    clip_info["startFrame"] = float(
+                        media_native_start_frame
+                    )  # Media In point (from source media)
+                    clip_info["endFrame"] = float(
+                        media_native_start_frame + frames_of_media_to_use
+                    )  # Media Out point (from source media)
+
                 elif element.media_type is MediaType.AUDIO:
-                    # Audio clips typically use their full available length or a timeline-relative portion
-                    # For simplicity, using what was there, assuming it implies full clip usage based on recordFrame.
-                    # If specific in/out from audio media is needed, similar logic to video would apply.
-                    clip_info["startFrame"] = media_item.GetClipProperty("Start") # Usually 0 for audio if not timecoded
-                    clip_info["endFrame"] = media_item.GetClipProperty("End") # Full duration of audio media
-                    # The actual duration on timeline is determined by recordFrame + effective duration logic of Resolve
-                    # if no explicit duration is set for audio clips in AppendToTimeline.
-                    # The current structure does not seem to set an explicit duration for audio on timeline via clip_info.
-                    # This part might need further review based on desired audio handling for partial clips.
-                    # For now, preserving the original approach for audio start/end in clip_info.
+                    clip_info["startFrame"] = 0
+                    clip_info["endFrame"] = element.time_range.duration_frames
 
                 response = media_pool.AppendToTimeline([clip_info])
 
