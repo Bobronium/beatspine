@@ -6,7 +6,7 @@ if not TYPE_CHECKING:
     import fusionscript
 
 else:
-    from beatlapse import fusionscript
+    from beatspine import fusionscript
 
 
 def get_resolve() -> "fusionscript.Resolve":

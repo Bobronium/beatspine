@@ -3,10 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-from beatlapse.definitions import MediaType
-from beatlapse.definitions import TimelineElement
-from beatlapse.definitions import TimelineProject
-from beatlapse.console import echo
+from beatspine.definitions import MediaType
+from beatspine.definitions import TimelineElement
+from beatspine.definitions import TimelineProject
+from beatspine.console import echo
 
 
 class ResolveExporter:

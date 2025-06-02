@@ -11,36 +11,36 @@ from PIL import ImageDraw
 from PIL import ImageFont
 from tqdm import tqdm
 
-from beatlapse.console import echo
+from beatspine.console import echo
 
-from beatlapse.console import error
+from beatspine.console import error
 
-from beatlapse.console import warning
-from beatlapse.constants import DEFAULT_END_OFFSET_BEATS
-from beatlapse.constants import DEFAULT_FPS
-from beatlapse.constants import DEFAULT_GAP_SEC
-from beatlapse.constants import DEFAULT_START_OFFSET_BEATS
-from beatlapse.constants import SUPPORTED_IMAGE_EXTENSIONS
-from beatlapse.definitions import BeatInfo
-from beatlapse.definitions import DateRange
-from beatlapse.definitions import Dimensions
-from beatlapse.definitions import MediaAsset
-from beatlapse.definitions import MediaType
-from beatlapse.definitions import PhotoCluster
-from beatlapse.definitions import PhotoPlacement
-from beatlapse.definitions import PlaceholderMode
-from beatlapse.definitions import TimeGap
-from beatlapse.definitions import TimeRange
-from beatlapse.definitions import TimeUnit
-from beatlapse.definitions import TimelineElement
-from beatlapse.definitions import TimelineMarker
-from beatlapse.definitions import TimelineProject
-from beatlapse.filesystem import generate_deterministic_uid
-from beatlapse.filesystem import get_audio_duration
-from beatlapse.filesystem import get_finder_comment
-from beatlapse.filesystem import get_photo_date
-from beatlapse.typehints import PhotoMetadata
-from beatlapse.typehints import Seconds
+from beatspine.console import warning
+from beatspine.constants import DEFAULT_END_OFFSET_BEATS
+from beatspine.constants import DEFAULT_FPS
+from beatspine.constants import DEFAULT_GAP_SEC
+from beatspine.constants import DEFAULT_START_OFFSET_BEATS
+from beatspine.constants import SUPPORTED_IMAGE_EXTENSIONS
+from beatspine.definitions import BeatInfo
+from beatspine.definitions import DateRange
+from beatspine.definitions import Dimensions
+from beatspine.definitions import MediaAsset
+from beatspine.definitions import MediaType
+from beatspine.definitions import PhotoCluster
+from beatspine.definitions import PhotoPlacement
+from beatspine.definitions import PlaceholderMode
+from beatspine.definitions import TimeGap
+from beatspine.definitions import TimeRange
+from beatspine.definitions import TimeUnit
+from beatspine.definitions import TimelineElement
+from beatspine.definitions import TimelineMarker
+from beatspine.definitions import TimelineProject
+from beatspine.filesystem import generate_deterministic_uid
+from beatspine.filesystem import get_audio_duration
+from beatspine.filesystem import get_finder_comment
+from beatspine.filesystem import get_photo_date
+from beatspine.typehints import PhotoMetadata
+from beatspine.typehints import Seconds
 
 
 def parse_beat_anchor(comment: str) -> int | None:

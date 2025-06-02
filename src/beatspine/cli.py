@@ -20,7 +20,7 @@ import click
 from rich.console import Console
 from rich.progress import Progress
 
-from beatlapse.constants import (
+from beatspine.constants import (
     DEFAULT_END_OFFSET_BEATS,
     DEFAULT_FPS,
     DEFAULT_GAP_SEC,
@@ -31,11 +31,11 @@ from beatlapse.constants import (
     SUPPORTED_AUDIO_EXTENSIONS,
     SUPPORTED_IMAGE_EXTENSIONS,
 )
-from beatlapse.core import create_timeline_project
-from beatlapse.definitions import PlaceholderMode, TimeGap
-from beatlapse.exporters.fcpx import FCPXMLExporter
-from beatlapse.exporters.resolve import ResolveExporter
-from beatlapse.resolve_sync import ResolveSync
+from beatspine.core import create_timeline_project
+from beatspine.definitions import PlaceholderMode, TimeGap
+from beatspine.exporters.fcpx import FCPXMLExporter
+from beatspine.exporters.resolve import ResolveExporter
+from beatspine.resolve_sync import ResolveSync
 
 
 console = Console()

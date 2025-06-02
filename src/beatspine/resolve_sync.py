@@ -1,5 +1,5 @@
 """
-ResolveSync - Differential DaVinci Resolve integration for beatlapse.
+ResolveSync - Differential DaVinci Resolve integration for beatspine.
 
 Implements idempotent synchronization through minimal state changes,
 preserving manual modifications while maintaining timeline consistency.
@@ -17,23 +17,23 @@ from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
 
-from beatlapse.definitions import (
+from beatspine.definitions import (
     MediaAsset,
     MediaType,
     PlaceholderMode,
     TimelineElement,
     TimelineProject,
 )
-from beatlapse.resolve import get_resolve
+from beatspine.resolve import get_resolve
 
 if TYPE_CHECKING:
-    from beatlapse import fusionscript
+    from beatspine import fusionscript
 
 console = Console()
 
 # State management constants
-BEATLINER_METADATA_KEY: Final[str] = "beatlapse_managed"
-BEATLINER_STATE_KEY: Final[str] = "beatlapse_state"
+BEATLINER_METADATA_KEY: Final[str] = "beatspine_managed"
+BEATLINER_STATE_KEY: Final[str] = "beatspine_state"
 BEATLINER_VERSION: Final[str] = "1.0"
 
 
@@ -202,7 +202,7 @@ class ResolveSync:
     def _catalog_current_items(
         self, timeline: fusionscript.Timeline
     ) -> dict[str, fusionscript.TimelineItem]:
-        """Build mapping of beatlapse-managed items in timeline."""
+        """Build mapping of beatspine-managed items in timeline."""
         managed_items: dict[str, fusionscript.TimelineItem] = {}
 
         for track_type in ["video", "audio"]:
@@ -210,18 +210,18 @@ class ResolveSync:
             for track_index in range(1, track_count + 1):
                 items = timeline.GetItemListInTrack(track_type, track_index)
                 for item in items:
-                    asset_uid = self._extract_beatlapse_uid(item)
+                    asset_uid = self._extract_beatspine_uid(item)
                     if asset_uid:
                         managed_items[asset_uid] = item
 
         return managed_items
 
-    def _extract_beatlapse_uid(self, item: fusionscript.TimelineItem) -> str | None:
-        """Extract beatlapse asset UID from timeline item markers."""
+    def _extract_beatspine_uid(self, item: fusionscript.TimelineItem) -> str | None:
+        """Extract beatspine asset UID from timeline item markers."""
         markers = item.GetMarkers()
         for marker_info in markers.values():
             custom_data = marker_info.get("customData", "")
-            if custom_data.startswith("beatlapse:"):
+            if custom_data.startswith("beatspine:"):
                 return custom_data.split(":", 1)[1]
         return None
 
@@ -298,24 +298,24 @@ class ResolveSync:
         current_items: dict[str, fusionscript.TimelineItem],
         managed_uids: frozenset[str],
     ) -> ConflictReport:
-        """Detect manual modifications that conflict with beatlapse management."""
+        """Detect manual modifications that conflict with beatspine management."""
         unmanaged_items = []
         manual_markers = []
 
-        # Scan for items not managed by beatlapse
+        # Scan for items not managed by beatspine
         for track_type in "video", "audio":
             track_count = timeline.GetTrackCount(track_type)
             for track_index in range(1, track_count + 1):
                 items = timeline.GetItemListInTrack(track_type, track_index)
                 for item in items:
-                    if not self._extract_beatlapse_uid(item):
+                    if not self._extract_beatspine_uid(item):
                         unmanaged_items.append(f"Manual item: {item.GetName()}")
 
-        # Scan for non-beatlapse markers
+        # Scan for non-beatspine markers
         markers = timeline.GetMarkers()
         for frame_id, marker_info in markers.items():
             custom_data = marker_info.get("customData", "")
-            if not custom_data.startswith("beatlapse:"):
+            if not custom_data.startswith("beatspine:"):
                 marker_name = marker_info.get("name", "Unknown")
                 manual_markers.append(
                     f"Manual marker at frame {frame_id}: {marker_name}"
@@ -358,7 +358,7 @@ class ResolveSync:
             if resolved_path in path_to_item:
                 pool_item = path_to_item[resolved_path]
                 pool_item.SetMetadata(BEATLINER_METADATA_KEY, "true")
-                pool_item.SetMetadata("beatlapse_uid", asset.uid)
+                pool_item.SetMetadata("beatspine_uid", asset.uid)
                 imported_items[asset.uid] = pool_item
 
         return imported_items
@@ -477,18 +477,18 @@ class ResolveSync:
         self, timeline: fusionscript.Timeline, project: TimelineProject
     ) -> None:
         """Perform differential synchronization of beat markers."""
-        # Catalog existing beatlapse beat markers
+        # Catalog existing beatspine beat markers
         existing_markers = timeline.GetMarkers()
         current_beat_markers: dict[int, float] = {}  # beat_index -> frame_position
 
         for frame_id, marker_info in existing_markers.items():
             custom_data = marker_info.get("customData", "")
-            if custom_data.startswith("beatlapse:beat:"):
+            if custom_data.startswith("beatspine:beat:"):
                 try:
                     beat_index = int(custom_data.split(":")[-1])
                     current_beat_markers[beat_index] = float(frame_id)
                 except (ValueError, IndexError):
-                    # Remove malformed beatlapse markers
+                    # Remove malformed beatspine markers
                     timeline.DeleteMarkerAtFrame(frame_id)
 
         # Compute required changes
@@ -532,7 +532,7 @@ class ResolveSync:
                     marker_name,
                     note,
                     1.0,
-                    f"beatlapse:beat:{beat.index}",
+                    f"beatspine:beat:{beat.index}",
                 )
 
         added_count = len(target_indices - current_indices)

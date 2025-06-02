@@ -13,10 +13,10 @@ from pathlib import Path
 from typing import Any
 from typing import Protocol
 
-from beatlapse.typehints import Milliseconds
+from beatspine.typehints import Milliseconds
 
-from beatlapse.typehints import PhotoMetadata
-from beatlapse.typehints import Seconds
+from beatspine.typehints import PhotoMetadata
+from beatspine.typehints import Seconds
 
 
 class MediaType(StrEnum):
@@ -155,7 +155,7 @@ class MediaAsset:
     @classmethod
     def from_photo(cls, path: Path, uid: str) -> MediaAsset:
         """Create photo asset."""
-        from beatlapse.filesystem import detect_image_dimensions
+        from beatspine.filesystem import detect_image_dimensions
 
         return cls(
             path=path,

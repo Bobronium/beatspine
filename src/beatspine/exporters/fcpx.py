@@ -1,40 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from pathlib import Path
-from pathlib import Path
-from pathlib import Path
-from xml.etree import ElementTree as ET
-from xml.etree import ElementTree as ET
-from xml.etree import ElementTree as ET
-from xml.etree import ElementTree as ET
-from xml.etree import ElementTree as ET
-from xml.etree import ElementTree as ET
-from xml.etree import ElementTree as ET
-from xml.etree import ElementTree as ET
-from xml.etree import ElementTree as ET
-from xml.etree import ElementTree as ET
-from xml.etree import ElementTree as ET
-from xml.etree import ElementTree as ET
-from xml.etree import ElementTree as ET
-from xml.etree import ElementTree as ET
-from xml.etree import ElementTree as ET
-from xml.etree import ElementTree as ET
-from xml.etree import ElementTree as ET
 from xml.etree import ElementTree as ET
 
-from beatlapse.definitions import MediaAsset
-from beatlapse.definitions import MediaType
-from beatlapse.definitions import MediaType
-from beatlapse.definitions import MediaType
-from beatlapse.definitions import MediaType
-from beatlapse.definitions import TimelineElement
-from beatlapse.definitions import TimelineElement
-from beatlapse.definitions import TimelineProject
-from beatlapse.definitions import TimelineProject
-from beatlapse.definitions import TimelineProject
-from beatlapse.definitions import TimelineProject
-from beatlapse.console import echo
+from beatspine.definitions import MediaAsset
+from beatspine.definitions import MediaType
+from beatspine.definitions import TimelineElement
+from beatspine.definitions import TimelineProject
+from beatspine.console import echo
 
 
 class FCPXMLExporter:

@@ -1,5 +1,5 @@
 [project]
-name = "beatlapse"
+name = "beatspine"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.scripts]
-beatlapse = "beatlapse:main"
+beatspine = "beatspine:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -31,5 +31,6 @@ build-backend = "hatchling.build"
 dev = [
     "fusionscript-stubs",
     "mypy",
+    "ruff>=0.11.12",
     "ty>=0.0.1a7",
 ]
