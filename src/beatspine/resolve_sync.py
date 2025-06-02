@@ -438,11 +438,13 @@ class ResolveSync:
 
                 media_item = media_items[element.asset.uid]
                 start_frame = int(element.time_range.start / 1000 * project.frame_rate)
-                duration_frames = int(
-                    # I have no idea where did 2 came from, but it seems to work perfectly with it.
-                    (element.time_range.duration / 1000 * project.frame_rate) / 2
+                media_fps = Decimal(media_item.GetClipProperty("FPS"))
+                frames_on_timeline = (
+                    element.time_range.duration / 1000 * project.frame_rate
                 )
-
+                frames_of_media = Decimal(
+                    frames_on_timeline / (project.frame_rate / media_fps)
+                )
                 clip_info = {
                     "mediaPoolItem": media_item,
                     "trackIndex": total_video_tracks + 1
@@ -452,10 +454,9 @@ class ResolveSync:
                     "mediaType": 2 if element.media_type == MediaType.AUDIO else 1,
                 }
                 if element.media_type is MediaType.VIDEO:
-                    clip_info["startFrame"] = start = int(
-                        media_item.GetClipProperty("Start")
-                    )
-                    clip_info["endFrame"] = start + duration_frames
+                    start = Decimal(media_item.GetClipProperty("Start"))
+                    clip_info["startFrame"] = float(start)
+                    clip_info["endFrame"] = float(start + frames_of_media)
                 else:
                     clip_info["startFrame"] = self._timeline_start_frame
                     clip_info["endFrame"] = timeline.GetEndFrame()
