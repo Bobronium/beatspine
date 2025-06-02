@@ -232,7 +232,7 @@ class TimelineProject:
 
     name: str
     duration: Milliseconds
-    duration_frames: int # Moved here, no default
+    duration_frames: int
     frame_rate: int
     dimensions: Dimensions
     elements: list[TimelineElement]
