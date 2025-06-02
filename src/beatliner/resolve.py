@@ -6,7 +6,7 @@ if not TYPE_CHECKING:
     import fusionscript
 
 else:
-    import fusionscript_stubs as fusionscript
+    from beatliner import fusionscript
 
 
 def get_resolve() -> "fusionscript.Resolve":

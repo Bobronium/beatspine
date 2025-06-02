@@ -1,84 +1,165 @@
+#!/usr/bin/env python3
+"""
+Beatliner CLI - Beat-synchronized photo timeline generator for DaVinci Resolve.
+
+This tool creates timelines where photos are synchronized to musical beats,
+with two operational modes:
+- export: Generate XML files for manual import
+- sync: Direct integration with running DaVinci Resolve instance
+"""
+
 from __future__ import annotations
 
-import argparse
+import sys
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import Final
 
+import click
+from rich.console import Console
+from rich.progress import Progress
+
+from beatliner.constants import (
+    DEFAULT_END_OFFSET_BEATS,
+    DEFAULT_FPS,
+    DEFAULT_GAP_SEC,
+    DEFAULT_OUTPUT,
+    DEFAULT_PLACEHOLDERS,
+    DEFAULT_START_OFFSET_BEATS,
+    DEFAULT_TIME_GAP,
+    SUPPORTED_AUDIO_EXTENSIONS,
+    SUPPORTED_IMAGE_EXTENSIONS,
+)
 from beatliner.core import create_timeline_project
-from beatliner.console import echo
-
-from beatliner.console import error
-from beatliner.constants import DEFAULT_END_OFFSET_BEATS
-from beatliner.constants import DEFAULT_FPS
-from beatliner.constants import DEFAULT_GAP_SEC
-from beatliner.constants import DEFAULT_OUTPUT
-from beatliner.constants import DEFAULT_PLACEHOLDERS
-from beatliner.constants import DEFAULT_START_OFFSET_BEATS
-from beatliner.constants import DEFAULT_TIME_GAP
-from beatliner.constants import SUPPORTED_AUDIO_EXTENSIONS
-from beatliner.constants import SUPPORTED_IMAGE_EXTENSIONS
-from beatliner.definitions import PlaceholderMode
-from beatliner.definitions import TimeGap
+from beatliner.definitions import PlaceholderMode, TimeGap
 from beatliner.exporters.fcpx import FCPXMLExporter
 from beatliner.exporters.resolve import ResolveExporter
+from beatliner.resolve_sync import ResolveSync
 
 
-def parse_args() -> argparse.Namespace:
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
-        description="Generate timeline projects for multiple NLEs with beat-synchronized photos"
-    )
+console = Console()
 
-    parser.add_argument(
-        "--dir", required=True, type=Path, help="Directory containing photos"
-    )
-    parser.add_argument(
-        "--soundtrack",
-        required=True,
-        type=Path,
-        help="Audio file (.m4a, .mp3, .wav, .aac) for timeline duration and sync",
-    )
-    parser.add_argument(
-        "--bpm",
-        type=Decimal,
-        required=True,
-        help="Beats per minute for timeline synchronization",
-    )
-    parser.add_argument(
-        "--nle",
-        type=str,
-        choices=["fcpx", "resolve", "both"],
-        default="fcpx",
-        help="Target NLE: fcpx (Final Cut Pro), resolve (DaVinci Resolve), or both",
-    )
+# CLI Constants
+SUPPORTED_NLES: Final[tuple[str, ...]] = ("fcpx", "resolve", "both")
+ID_METHODS: Final[tuple[str, ...]] = ("inode", "content", "path")
 
-    parser.add_argument(
+
+def echo(message: str, **kwargs) -> None:
+    """Output to console with rich formatting."""
+    console.print(message, **kwargs)
+
+
+def error(message: str, code: int = 1) -> None:
+    """Output error and exit."""
+    console.print(f"Error: {message}", style="bold red")
+    sys.exit(code)
+
+
+def handle_exception(verbose: bool, exc: Exception) -> None:
+    """Handle exceptions with optional verbose traceback."""
+    if verbose:
+        console.print_exception(show_locals=True, width=300, max_frames=3)
+        sys.exit(1)
+    else:
+        error(str(exc))
+
+
+def validate_audio_file(
+    ctx: click.Context, param: click.Parameter, value: Path
+) -> Path:
+    """Validate audio file exists and has supported extension."""
+    if not value.exists():
+        raise click.BadParameter(f"Audio file not found: {value}")
+
+    if value.suffix.lower() not in SUPPORTED_AUDIO_EXTENSIONS:
+        raise click.BadParameter(f"Unsupported audio format: {value.suffix}")
+
+    return value
+
+
+def validate_photo_dir(ctx: click.Context, param: click.Parameter, value: Path) -> Path:
+    """Validate photo directory exists."""
+    if not value.is_dir():
+        raise click.BadParameter(f"Photo directory not found: {value}")
+
+    return value
+
+
+def parse_date(
+    ctx: click.Context, param: click.Parameter, value: str | None
+) -> datetime | None:
+    """Parse ISO date string."""
+    if not value:
+        return None
+
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        raise click.BadParameter(
+            f"Invalid date format: {value}. Use ISO format (YYYY-MM-DD)"
+        )
+
+
+def parse_extensions(extensions_str: str | None) -> frozenset[str]:
+    """Parse comma-separated extensions."""
+    if not extensions_str:
+        return SUPPORTED_IMAGE_EXTENSIONS
+
+    extensions = [ext.strip().lower() for ext in extensions_str.split(",")]
+    return frozenset(ext if ext.startswith(".") else f".{ext}" for ext in extensions)
+
+
+# Common options for both commands
+photo_dir_option = click.option(
+    "--dir",
+    "photo_dir",
+    required=True,
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
+    callback=validate_photo_dir,
+    help="Directory containing photos",
+)
+
+soundtrack_option = click.option(
+    "--soundtrack",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    callback=validate_audio_file,
+    help="Audio file (.m4a, .mp3, .wav, .aac) for timeline duration and sync",
+)
+
+bpm_option = click.option(
+    "--bpm",
+    required=True,
+    type=Decimal,
+    help="Beats per minute for timeline synchronization",
+)
+
+verbose_option = click.option(
+    "--verbose", is_flag=True, help="Show full tracebacks on errors"
+)
+
+timing_options = [
+    click.option(
         "--start-offset-beats",
-        type=int,
         default=DEFAULT_START_OFFSET_BEATS,
         help=f"Number of beats to skip at start (default: {DEFAULT_START_OFFSET_BEATS})",
-    )
-    parser.add_argument(
+    ),
+    click.option(
         "--end-offset-beats",
-        type=int,
         default=DEFAULT_END_OFFSET_BEATS,
         help=f"Number of beats to skip at end (default: {DEFAULT_END_OFFSET_BEATS})",
-    )
-
-    parser.add_argument(
+    ),
+    click.option(
         "--start-date",
-        type=str,
-        default=None,
+        callback=parse_date,
         help="Start date in ISO format (YYYY-MM-DD)",
-    )
-    parser.add_argument(
-        "--end-date", type=str, default=None, help="End date in ISO format (YYYY-MM-DD)"
-    )
-
-    parser.add_argument(
+    ),
+    click.option(
+        "--end-date", callback=parse_date, help="End date in ISO format (YYYY-MM-DD)"
+    ),
+    click.option(
         "--time-gap",
-        type=str,
         default=DEFAULT_TIME_GAP,
         help=(
             "Time gap for photo clustering. Format: 'amount-unit' or 'amount-unit-same'. "
@@ -86,42 +167,32 @@ def parse_args() -> argparse.Namespace:
             "Examples: '1-day' (minimum 1 day gap), '1-year-same' (group by same year). "
             f"Default: {DEFAULT_TIME_GAP}"
         ),
-    )
+    ),
+]
 
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=Path(DEFAULT_OUTPUT),
-        help=f"Output file path (default: {DEFAULT_OUTPUT})",
-    )
-    parser.add_argument(
+media_options = [
+    click.option(
         "--extensions",
-        type=str,
-        default=None,
         help=f"Comma-separated image extensions (default: {','.join(SUPPORTED_IMAGE_EXTENSIONS)})",
-    )
-
-    parser.add_argument(
+    ),
+    click.option(
         "--gap-sec",
-        type=Decimal,
         default=DEFAULT_GAP_SEC,
+        type=Decimal,
         help=f"Gap duration in seconds (default: {DEFAULT_GAP_SEC})",
-    )
-    parser.add_argument(
+    ),
+    click.option(
         "--frames",
-        type=int,
+        "frame_rate",
         default=DEFAULT_FPS,
         help=f"Frames per second (default: {DEFAULT_FPS})",
-    )
-
-    parser.add_argument(
-        "--name", type=str, default="PhotoTimeline", help="Project name"
-    )
-
-    parser.add_argument(
+    ),
+    click.option(
+        "--name", "project_name", default="PhotoTimeline", help="Project name"
+    ),
+    click.option(
         "--placeholders",
-        type=str,
-        choices=["image", "title", "captions", "missing", "none"],
+        type=click.Choice(["image", "title", "captions", "missing", "none"]),
         default=DEFAULT_PLACEHOLDERS,
         help=(
             "Placeholder mode for empty beats: "
@@ -131,128 +202,240 @@ def parse_args() -> argparse.Namespace:
             "'missing' creates missing media indicators (fastest), "
             f"'none' skips placeholders entirely (default: {DEFAULT_PLACEHOLDERS})"
         ),
-    )
-
-    parser.add_argument(
+    ),
+    click.option(
         "--id-method",
-        type=str,
-        choices=["inode", "content", "path"],
+        type=click.Choice(ID_METHODS),
         default="inode",
         help="Method for generating deterministic UIDs",
-    )
+    ),
+]
 
-    return parser.parse_args()
+
+def add_options(options):
+    """Decorator to add multiple options to a command."""
+
+    def decorator(func):
+        for option in reversed(options):
+            func = option(func)
+        return func
+
+    return decorator
 
 
-def parse_date_arg(date_str: str | None) -> datetime | None:
-    """Parse a date string or return None."""
-    if not date_str:
-        return None
+@click.group()
+@click.version_option()
+def main():
+    """Beatliner - Beat-synchronized photo timeline generator for DaVinci Resolve."""
+    pass
+
+
+@main.command()
+@photo_dir_option
+@soundtrack_option
+@bpm_option
+@add_options(timing_options)
+@add_options(media_options)
+@verbose_option
+@click.option(
+    "--nle",
+    type=click.Choice(SUPPORTED_NLES),
+    default="fcpx",
+    help="Target NLE: fcpx (Final Cut Pro), resolve (DaVinci Resolve), or both",
+)
+@click.option(
+    "--output",
+    type=click.Path(path_type=Path),
+    default=Path(DEFAULT_OUTPUT),
+    help=f"Output file path (default: {DEFAULT_OUTPUT})",
+)
+def export(
+    photo_dir: Path,
+    soundtrack: Path,
+    bpm: Decimal,
+    start_offset_beats: int,
+    end_offset_beats: int,
+    start_date: datetime | None,
+    end_date: datetime | None,
+    time_gap: str,
+    extensions: str | None,
+    gap_sec: Decimal,
+    frame_rate: int,
+    project_name: str,
+    placeholders: str,
+    id_method: str,
+    verbose: bool,
+    nle: str,
+    output: Path,
+) -> None:
+    """Export timeline to XML files for manual import into NLE."""
+
     try:
-        return datetime.fromisoformat(date_str)
-    except ValueError:
-        error(f"Invalid date format: {date_str}. Use ISO format (YYYY-MM-DD).")
+        # Parse and validate inputs
+        supported_extensions = parse_extensions(extensions)
+        placeholder_mode = PlaceholderMode(placeholders)
 
+        try:
+            parsed_time_gap = TimeGap.parse(time_gap)
+        except ValueError as e:
+            error(f"Invalid time gap: {e}")
 
-def main() -> None:
-    """Main entry point."""
-    args = parse_args()
+        # Create timeline project
+        with Progress() as progress:
+            task = progress.add_task("Creating timeline project...", total=None)
 
-    if not args.soundtrack.exists():
-        error(f"Soundtrack file not found: {args.soundtrack}")
+            project = create_timeline_project(
+                photo_dir=photo_dir,
+                soundtrack_path=soundtrack,
+                bpm=bpm,
+                project_name=project_name,
+                frame_rate=frame_rate,
+                gap_sec=gap_sec,
+                start_offset_beats=start_offset_beats,
+                end_offset_beats=end_offset_beats,
+                start_date=start_date,
+                end_date=end_date,
+                placeholder_mode=placeholder_mode,
+                time_gap=parsed_time_gap,
+                id_method=id_method,
+                supported_extensions=supported_extensions,
+            )
+            progress.update(task, completed=True)
 
-    if args.soundtrack.suffix.lower() not in SUPPORTED_AUDIO_EXTENSIONS:
-        error(f"Unsupported audio format: {args.soundtrack.suffix}")
+        # Export to selected NLE(s)
+        output_dir = output.parent if output.parent != Path() else Path.cwd()
 
-    if not args.dir.is_dir():
-        error(f"Photo directory not found: {args.dir}")
+        if nle in {"fcpx", "both"}:
+            fcpx_output = (
+                output.with_suffix(".fcpxml")
+                if nle == "fcpx"
+                else output_dir / f"{project_name}.fcpxml"
+            )
+            exporter = FCPXMLExporter(output_dir)
+            exporter.export(project, fcpx_output)
 
-    start_date = parse_date_arg(args.start_date)
-    end_date = parse_date_arg(args.end_date)
+        if nle in {"resolve", "both"}:
+            resolve_output = (
+                output.with_suffix(".xml")
+                if nle == "resolve"
+                else output_dir / f"{project_name}_resolve.xml"
+            )
+            exporter = ResolveExporter(output_dir)
+            exporter.export(project, resolve_output)
 
-    supported_extensions = SUPPORTED_IMAGE_EXTENSIONS
-    if args.extensions:
-        extensions = [ext.strip().lower() for ext in args.extensions.split(",")]
-        supported_extensions = frozenset(
-            ext if ext.startswith(".") else f".{ext}" for ext in extensions
+        # Success messaging
+        echo(
+            f"✅ Created timeline with {len(project.photo_placements)} photos and audio track",
+            style="green",
         )
 
-    # Convert placeholder mode
-    placeholder_mode = PlaceholderMode(args.placeholders)
+        performance_messages = {
+            PlaceholderMode.NONE: "No placeholders - optimal performance",
+            PlaceholderMode.MISSING: "Missing media placeholders - slightly faster than image",
+            PlaceholderMode.CAPTIONS: "Caption placeholders - good performance with subtitle track",
+            PlaceholderMode.IMAGE: "Generated image placeholders - moderate performance impact",
+            PlaceholderMode.TITLE: "Text title placeholders - highest performance impact on timeline navigation",
+        }
 
-    # Parse time gap
+        echo(
+            f"📋 Placeholder mode: {placeholder_mode.value} ({performance_messages[placeholder_mode]})"
+        )
+
+        if parsed_time_gap.amount > 0:
+            gap_description = (
+                f"{parsed_time_gap.amount} {parsed_time_gap.unit.value}(s)"
+            )
+            mode_description = (
+                "same period grouping"
+                if parsed_time_gap.same_period_mode
+                else "minimum gap clustering"
+            )
+            echo(f"⏱️  Time gap clustering: {gap_description} ({mode_description})")
+
+    except Exception as exc:
+        handle_exception(verbose, exc)
+
+
+@main.command()
+@photo_dir_option
+@soundtrack_option
+@bpm_option
+@add_options(timing_options)
+@add_options(media_options)
+@verbose_option
+@click.option("--force", is_flag=True, help="Force sync even if conflicts detected")
+@click.option("--recreate", is_flag=True, help="Force sync even if conflicts detected")
+@click.option(
+    "--dry-run", is_flag=True, help="Show what would be done without making changes"
+)
+def sync(
+    photo_dir: Path,
+    soundtrack: Path,
+    bpm: Decimal,
+    start_offset_beats: int,
+    end_offset_beats: int,
+    start_date: datetime | None,
+    end_date: datetime | None,
+    time_gap: str,
+    extensions: str | None,
+    gap_sec: Decimal,
+    frame_rate: int,
+    project_name: str,
+    placeholders: str,
+    id_method: str,
+    verbose: bool,
+    force: bool,
+    dry_run: bool,
+    recreate: bool,
+) -> None:
+    """Sync timeline directly with running DaVinci Resolve instance."""
+
     try:
-        time_gap = TimeGap.parse(args.time_gap)
-    except ValueError as e:
-        error(f"Invalid time gap: {e}")
+        # Parse and validate inputs
+        supported_extensions = parse_extensions(extensions)
+        placeholder_mode = PlaceholderMode(placeholders)
 
-    # Create timeline project
-    project = create_timeline_project(
-        photo_dir=args.dir,
-        soundtrack_path=args.soundtrack,
-        bpm=args.bpm,
-        project_name=args.name,
-        frame_rate=args.frames,
-        gap_sec=args.gap_sec,
-        start_offset_beats=args.start_offset_beats,
-        end_offset_beats=args.end_offset_beats,
-        start_date=start_date,
-        end_date=end_date,
-        placeholder_mode=placeholder_mode,
-        time_gap=time_gap,
-        id_method=args.id_method,
-        supported_extensions=supported_extensions,
-    )
+        try:
+            parsed_time_gap = TimeGap.parse(time_gap)
+        except ValueError as e:
+            error(f"Invalid time gap: {e}")
 
-    # Export to selected NLE(s)
-    output_dir = args.output.parent if args.output.parent != Path() else Path.cwd()
+        # Create timeline project
+        with Progress() as progress:
+            task = progress.add_task("Creating timeline project...", total=None)
 
-    if args.nle in {"fcpx", "both"}:
-        fcpx_output = (
-            args.output.with_suffix(".fcpxml")
-            if args.nle == "fcpx"
-            else output_dir / f"{args.name}.fcpxml"
+            project = create_timeline_project(
+                photo_dir=photo_dir,
+                soundtrack_path=soundtrack,
+                bpm=bpm,
+                project_name=project_name,
+                frame_rate=frame_rate,
+                gap_sec=gap_sec,
+                start_offset_beats=start_offset_beats,
+                end_offset_beats=end_offset_beats,
+                start_date=start_date,
+                end_date=end_date,
+                placeholder_mode=placeholder_mode,
+                time_gap=parsed_time_gap,
+                id_method=id_method,
+                supported_extensions=supported_extensions,
+            )
+            progress.update(task, completed=True)
+
+        # Sync with DaVinci Resolve
+        sync_engine = ResolveSync()
+        sync_engine.sync_project(
+            project, force=force, dry_run=dry_run, recreate=recreate
         )
-        exporter = FCPXMLExporter(output_dir)
-        exporter.export(project, fcpx_output)
 
-    if args.nle in {"resolve", "both"}:
-        resolve_output = (
-            args.output.with_suffix(".xml")
-            if args.nle == "resolve"
-            else output_dir / f"{args.name}_resolve.xml"
-        )
-        exporter = ResolveExporter(output_dir)
-        exporter.export(project, resolve_output)
+        if dry_run:
+            echo("🔍 Dry run completed - no changes made", style="blue")
+        else:
+            echo("✅ Timeline synced successfully", style="green")
 
-    # Performance optimization messaging
-    performance_msg = {
-        PlaceholderMode.NONE: "No placeholders - optimal performance",
-        PlaceholderMode.MISSING: "Missing media placeholders - slightly faster than image",
-        PlaceholderMode.CAPTIONS: "Caption placeholders - good performance with subtitle track",
-        PlaceholderMode.IMAGE: "Generated image placeholders - moderate performance impact",
-        PlaceholderMode.TITLE: "Text title placeholders - highest performance impact on timeline navigation",
-    }
+    except Exception as exc:
+        handle_exception(verbose, exc)
 
-    echo(
-        f"Created timeline with {len(project.photo_placements)} photos and audio track"
-    )
-    echo(
-        f"Placeholder mode: {placeholder_mode.value} ({performance_msg[placeholder_mode]})"
-    )
 
-    if time_gap.amount > 0:
-        gap_description = f"{time_gap.amount} {time_gap.unit.value}(s)"
-        mode_description = (
-            "same period grouping"
-            if time_gap.same_period_mode
-            else "minimum gap clustering"
-        )
-        echo(f"Time gap clustering: {gap_description} ({mode_description})")
-
-    if placeholder_mode == PlaceholderMode.IMAGE:
-        echo(f"Generated placeholder images in: {output_dir / 'placeholders'}")
-    elif placeholder_mode == PlaceholderMode.MISSING:
-        echo("Missing media indicators will appear in the NLE for empty beats")
-    elif placeholder_mode == PlaceholderMode.CAPTIONS:
-        echo("Caption track will display beat numbers and date ranges for empty beats")
+if __name__ == "__main__":
+    main()

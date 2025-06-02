@@ -17,7 +17,6 @@ from beatliner.typehints import Milliseconds
 
 from beatliner.typehints import PhotoMetadata
 from beatliner.typehints import Seconds
-from beatliner.core import detect_image_dimensions
 
 
 class MediaType(StrEnum):
@@ -156,6 +155,8 @@ class MediaAsset:
     @classmethod
     def from_photo(cls, path: Path, uid: str) -> MediaAsset:
         """Create photo asset."""
+        from beatliner.filesystem import detect_image_dimensions
+
         return cls(
             path=path,
             media_type=MediaType.VIDEO,

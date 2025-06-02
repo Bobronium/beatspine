@@ -8,10 +8,14 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
+    "click>=8.2.1",
     "exifread",
+    "mactime>=0.1.0",
     "mutagen",
     "pillow",
+    "pyaaf2>=1.7.1",
     "pydavinci",
+    "rich>=14.0.0",
     "tqdm",
     "xattr",
 ]
@@ -27,4 +31,5 @@ build-backend = "hatchling.build"
 dev = [
     "fusionscript-stubs",
     "mypy",
+    "ty>=0.0.1a7",
 ]
