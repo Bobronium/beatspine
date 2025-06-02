@@ -232,7 +232,7 @@ class TimelineProject:
 
     name: str
     duration: Milliseconds
-    # Non-default fields first
+    duration_frames: int # Moved here, no default
     frame_rate: int
     dimensions: Dimensions
     elements: list[TimelineElement]
@@ -240,8 +240,7 @@ class TimelineProject:
     beats: list[BeatInfo]
     photo_placements: list[PhotoPlacement]
 
-    # Fields with default values start here
-    duration_frames: int = 0
+    # Remaining fields with default values
     gap_duration: Milliseconds = Decimal(0)
     start_offset_beats: int = 0
     end_offset_beats: int = 0
