@@ -411,28 +411,6 @@ class ResolveSync:
         if changes.markers_to_sync:
             self._synchronize_beat_markers(timeline, project)
 
-    def _calculate_media_frame_range(
-        self,
-        element: TimelineElement,
-        media_item: fusionscript.MediaPoolItem,
-    ) -> tuple[int, int]:
-        """Calculate media frame range preserving native FPS relationships."""
-        # Extract media's declared frame rate
-        media_fps_str = media_item.GetClipProperty("FPS")
-        media_fps = Decimal(media_fps_str) if media_fps_str else Decimal("24")
-
-        # Convert element duration from milliseconds to seconds using Decimal precision
-        duration_seconds = Decimal(element.time_range.duration) / Decimal("1000")
-
-        # Calculate media frame count at native rate
-        media_duration_frames = int(duration_seconds * media_fps)
-
-        # Photos and single-frame assets start at frame 0
-        start_frame = 0
-        end_frame = media_duration_frames
-
-        return start_frame, end_frame
-
     def _add_elements_to_timeline(
         self,
         timeline: fusionscript.Timeline,
@@ -440,56 +418,60 @@ class ResolveSync:
         media_items: dict[str, fusionscript.MediaPoolItem],
         project: TimelineProject,
     ) -> None:
-        """Add elements with precise frame rate handling."""
+        """Add new elements to timeline using batch import."""
+        clip_infos: list[fusionscript.MediaPoolClipInfo] = []
         media_pool = self._current_project.GetMediaPool()
+        total_video_tracks = timeline.GetTrackCount("video")
+        total_audio_tracks = timeline.GetTrackCount("audio")
 
-        # Process elements individually to handle frame rate complexity
-        for element in elements:
-            if not element.asset or element.asset.uid not in media_items:
-                continue
+        for media_type in (
+            MediaType.VIDEO,
+            MediaType.AUDIO,
+        ):
+            for element in elements:
+                if (
+                    not element.asset
+                    or element.asset.uid not in media_items
+                    or element.media_type != media_type
+                ):
+                    continue
 
-            media_item = media_items[element.asset.uid]
-
-            # Timeline position (always calculated at timeline FPS)
-            timeline_start_frame = int(
-                element.time_range.start / 1000 * project.frame_rate
-            )
-            record_frame = self._timeline_start_frame + timeline_start_frame
-
-            # Media frame range (calculated at media's native FPS)
-            start_frame, end_frame = self._calculate_media_frame_range(
-                element, media_item
-            )
-
-            # Determine appropriate track index
-            if element.media_type == MediaType.VIDEO:
-                track_index = element.track if element.track > 0 else 1
-            else:  # AUDIO
-                track_index = abs(element.track) if element.track != 0 else 1
-
-            clip_info = {
-                "mediaPoolItem": media_item,
-                "recordFrame": record_frame,
-                "mediaType": 2 if element.media_type == MediaType.AUDIO else 1,
-                "trackIndex": track_index,
-                "startFrame": start_frame,
-                "endFrame": end_frame,
-            }
-
-            # Individual clip addition to preserve frame accuracy
-            response = media_pool.AppendToTimeline([clip_info])
-
-            if response and all(response):
-                console.print(f"✅ Added {element.asset.path.name}", style="green")
-            else:
-                # Diagnostic information for failed additions
-                media_fps = media_item.GetClipProperty("FPS")
-                console.print(f"⚠️  Failed: {element.asset.path.name}", style="yellow")
-                console.print(
-                    f"   Media FPS: {media_fps}, Timeline: {project.frame_rate}"
+                media_item = media_items[element.asset.uid]
+                start_frame = int(element.time_range.start / 1000 * project.frame_rate)
+                duration_frames = int(
+                    # I have no idea where did 2 came from, but it seems to work perfectly with it.
+                    (element.time_range.duration / 1000 * project.frame_rate) / 2
                 )
-                console.print(f"   Media frames: {start_frame}-{end_frame}")
-                console.print(f"   Timeline record: {record_frame}")
+
+                clip_info = {
+                    "mediaPoolItem": media_item,
+                    "trackIndex": total_video_tracks + 1
+                    if element.media_type is MediaType.AUDIO
+                    else total_audio_tracks,
+                    "recordFrame": self._timeline_start_frame + start_frame,
+                    "mediaType": 2 if element.media_type == MediaType.AUDIO else 1,
+                }
+                if element.media_type is MediaType.VIDEO:
+                    clip_info["startFrame"] = start = int(
+                        media_item.GetClipProperty("Start")
+                    )
+                    clip_info["endFrame"] = start + duration_frames
+                else:
+                    clip_info["startFrame"] = self._timeline_start_frame
+                    clip_info["endFrame"] = timeline.GetEndFrame()
+
+                response = media_pool.AppendToTimeline([clip_info])
+
+                if response and all(response):
+                    console.print(
+                        f"✅ Added {element.asset.path.name} to the timeline",
+                        style="green",
+                    )
+                else:
+                    console.print(
+                        f"⚠️{element.asset.path.name} couldn't be placed on the timeline...",
+                        style="yellow",
+                    )
 
     def _synchronize_beat_markers(
         self, timeline: fusionscript.Timeline, project: TimelineProject
