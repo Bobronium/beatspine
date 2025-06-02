@@ -280,14 +280,18 @@ class ResolveSync:
         tolerance = 0.5  # Sub-frame precision
 
         # Check timeline position
-        current_start_frames = Decimal(current_item.GetStart(True)) # Assuming GetStart returns frame count
+        current_start_frames = Decimal(
+            current_item.GetStart(True)
+        )  # Assuming GetStart returns frame count
         target_start_frames = Decimal(target_element.time_range.start_frame)
 
         if abs(current_start_frames - target_start_frames) > tolerance:
             return True
 
         # Check duration
-        current_duration_frames = Decimal(current_item.GetDuration(True)) # Assuming GetDuration returns frame count
+        current_duration_frames = Decimal(
+            current_item.GetDuration(True)
+        )  # Assuming GetDuration returns frame count
         target_duration_frames = Decimal(target_element.time_range.duration_frames)
 
         return abs(current_duration_frames - target_duration_frames) > tolerance
