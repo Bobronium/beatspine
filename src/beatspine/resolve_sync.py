@@ -280,17 +280,21 @@ class ResolveSync:
         tolerance = 0.5  # Sub-frame precision
 
         # Check timeline position
-        current_start = Decimal(current_item.GetStart(True))
-        target_start = target_element.time_range.start / 1000 * frame_rate
+        current_start_frames = Decimal(
+            current_item.GetStart(True)
+        )  # Assuming GetStart returns frame count
+        target_start_frames = Decimal(target_element.time_range.start_frame)
 
-        if abs(current_start - target_start) > tolerance:
+        if abs(current_start_frames - target_start_frames) > tolerance:
             return True
 
         # Check duration
-        current_duration = current_item.GetDuration(True)
-        target_duration = target_element.time_range.duration / 1000 * frame_rate
+        current_duration_frames = Decimal(
+            current_item.GetDuration(True)
+        )  # Assuming GetDuration returns frame count
+        target_duration_frames = Decimal(target_element.time_range.duration_frames)
 
-        return abs(current_duration - target_duration) > tolerance
+        return abs(current_duration_frames - target_duration_frames) > tolerance
 
     def _analyze_conflicts(
         self,
@@ -437,29 +441,62 @@ class ResolveSync:
                     continue
 
                 media_item = media_items[element.asset.uid]
-                start_frame = int(element.time_range.start / 1000 * project.frame_rate)
-                media_fps = Decimal(media_item.GetClipProperty("FPS"))
-                frames_on_timeline = (
-                    element.time_range.duration / 1000 * project.frame_rate
+
+                # record_timeline_frame is where the clip is placed on the timeline
+                record_timeline_frame = (
+                    self._timeline_start_frame + element.time_range.start_frame
                 )
-                frames_of_media = Decimal(
-                    frames_on_timeline / (project.frame_rate / media_fps)
-                )
+
                 clip_info = {
                     "mediaPoolItem": media_item,
-                    "trackIndex": total_video_tracks + 1
-                    if element.media_type is MediaType.AUDIO
+                    "trackIndex": total_video_tracks
+                    if element.media_type is MediaType.VIDEO
                     else total_audio_tracks,
-                    "recordFrame": self._timeline_start_frame + start_frame,
+                    "recordFrame": record_timeline_frame,
                     "mediaType": 2 if element.media_type == MediaType.AUDIO else 1,
                 }
+
                 if element.media_type is MediaType.VIDEO:
-                    start = Decimal(media_item.GetClipProperty("Start"))
-                    clip_info["startFrame"] = float(start)
-                    clip_info["endFrame"] = float(start + frames_of_media)
-                else:
-                    clip_info["startFrame"] = self._timeline_start_frame
-                    clip_info["endFrame"] = timeline.GetEndFrame()
+                    media_fps_str = media_item.GetClipProperty("FPS")
+                    media_clip_start_str = media_item.GetClipProperty(
+                        "Start"
+                    )  # Media's own start frame/timecode
+                    timeline_fps = Decimal(project.frame_rate)
+
+                    try:
+                        media_fps = Decimal(media_fps_str)
+                        if media_fps <= 0:  # FPS cannot be zero or negative
+                            media_fps = timeline_fps
+                    except (ValueError, TypeError, AttributeError):
+                        media_fps = timeline_fps
+
+                    try:
+                        media_native_start_frame = Decimal(media_clip_start_str)
+                    except (ValueError, TypeError, AttributeError):
+                        media_native_start_frame = Decimal(0)
+
+                    # frames_on_timeline is how long the clip should be on the timeline (in timeline frames)
+                    frames_on_timeline = element.time_range.duration_frames
+
+                    frames_of_media_to_use: Decimal
+                    if media_fps == timeline_fps:
+                        frames_of_media_to_use = Decimal(frames_on_timeline)
+                    else:
+                        # Adjust number of media frames to read based on FPS difference
+                        frames_of_media_to_use = (
+                            Decimal(frames_on_timeline) * media_fps
+                        ) / timeline_fps
+
+                    clip_info["startFrame"] = float(
+                        media_native_start_frame
+                    )  # Media In point (from source media)
+                    clip_info["endFrame"] = float(
+                        media_native_start_frame + frames_of_media_to_use
+                    )  # Media Out point (from source media)
+
+                elif element.media_type is MediaType.AUDIO:
+                    clip_info["startFrame"] = 0
+                    clip_info["endFrame"] = element.time_range.duration_frames
 
                 response = media_pool.AppendToTimeline([clip_info])
 
@@ -751,4 +788,4 @@ class ResolveSync:
             console.print(f"  🔄 Update {len(changes.items_to_update)} item positions")
 
         if changes.markers_to_sync:
-            console.print(f"  🎯 Sync {len(project.beats)} beat markers")
+            console.print(f"  🎯 Sync {len(project.markers)} project markers")

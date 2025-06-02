@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -31,9 +32,10 @@ class ResolveExporter:
 
         sequence = ET.SubElement(xmeml, "sequence")
         ET.SubElement(sequence, "name").text = project.name
-        ET.SubElement(sequence, "duration").text = str(
-            int(project.duration / 1000 * project.frame_rate)
-        )
+        # Calculate total sequence duration in frames
+        gap_frames_total = int(Decimal(project.gap_duration) / 1000 * Decimal(project.frame_rate))
+        sequence_total_frames = project.duration_frames + gap_frames_total
+        ET.SubElement(sequence, "duration").text = str(sequence_total_frames)
 
         rate = ET.SubElement(sequence, "rate")
         ET.SubElement(rate, "timebase").text = str(project.frame_rate)
@@ -121,24 +123,16 @@ class ResolveExporter:
         """Add video clip to track."""
         clipitem = ET.SubElement(track, "clipitem")
         ET.SubElement(clipitem, "name").text = element.name
-        ET.SubElement(clipitem, "duration").text = str(
-            int(element.time_range.duration / 1000 * project.frame_rate)
-        )
+        ET.SubElement(clipitem, "duration").text = str(element.time_range.duration_frames)
 
         rate = ET.SubElement(clipitem, "rate")
         ET.SubElement(rate, "timebase").text = str(project.frame_rate)
         ET.SubElement(rate, "ntsc").text = "FALSE"
 
-        ET.SubElement(clipitem, "in").text = "0"
-        ET.SubElement(clipitem, "out").text = str(
-            int(element.time_range.duration / 1000 * project.frame_rate)
-        )
-        ET.SubElement(clipitem, "start").text = str(
-            int(element.time_range.start / 1000 * project.frame_rate)
-        )
-        ET.SubElement(clipitem, "end").text = str(
-            int(element.time_range.end / 1000 * project.frame_rate)
-        )
+        ET.SubElement(clipitem, "in").text = "0" # Assuming clips always start from their beginning
+        ET.SubElement(clipitem, "out").text = str(element.time_range.duration_frames)
+        ET.SubElement(clipitem, "start").text = str(element.time_range.start_frame)
+        ET.SubElement(clipitem, "end").text = str(element.time_range.start_frame + element.time_range.duration_frames)
 
         if element.asset:
             file_elem = ET.SubElement(clipitem, "file")
@@ -153,24 +147,16 @@ class ResolveExporter:
         """Add audio clip to track."""
         clipitem = ET.SubElement(track, "clipitem")
         ET.SubElement(clipitem, "name").text = element.name
-        ET.SubElement(clipitem, "duration").text = str(
-            int(element.time_range.duration / 1000 * project.frame_rate)
-        )
+        ET.SubElement(clipitem, "duration").text = str(element.time_range.duration_frames)
 
         rate = ET.SubElement(clipitem, "rate")
         ET.SubElement(rate, "timebase").text = str(project.frame_rate)
         ET.SubElement(rate, "ntsc").text = "FALSE"
 
-        ET.SubElement(clipitem, "in").text = "0"
-        ET.SubElement(clipitem, "out").text = str(
-            int(element.time_range.duration / 1000 * project.frame_rate)
-        )
-        ET.SubElement(clipitem, "start").text = str(
-            int(element.time_range.start / 1000 * project.frame_rate)
-        )
-        ET.SubElement(clipitem, "end").text = str(
-            int(element.time_range.end / 1000 * project.frame_rate)
-        )
+        ET.SubElement(clipitem, "in").text = "0" # Assuming clips always start from their beginning
+        ET.SubElement(clipitem, "out").text = str(element.time_range.duration_frames)
+        ET.SubElement(clipitem, "start").text = str(element.time_range.start_frame)
+        ET.SubElement(clipitem, "end").text = str(element.time_range.start_frame + element.time_range.duration_frames)
 
         if element.asset:
             file_elem = ET.SubElement(clipitem, "file")
@@ -184,13 +170,9 @@ class ResolveExporter:
         for marker in project.markers:
             marker_elem = ET.SubElement(sequence, "marker")
             ET.SubElement(marker_elem, "name").text = marker.name
-            ET.SubElement(marker_elem, "comment").text = marker.name
-            ET.SubElement(marker_elem, "in").text = str(
-                int(marker.position / 1000 * project.frame_rate)
-            )
-            ET.SubElement(marker_elem, "out").text = str(
-                int((marker.position + marker.duration) / 1000 * project.frame_rate)
-            )
+            ET.SubElement(marker_elem, "comment").text = marker.name # Often comment is same as name or more descriptive
+            ET.SubElement(marker_elem, "in").text = str(marker.position_frame)
+            ET.SubElement(marker_elem, "out").text = str(marker.position_frame + marker.duration_frames)
 
     def _write_xml(self, root: ET.Element, output_path: Path) -> None:
         """Write XML tree to file."""

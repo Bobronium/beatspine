@@ -117,6 +117,8 @@ class TimeRange:
 
     start: Milliseconds
     duration: Milliseconds
+    start_frame: int = 0
+    duration_frames: int = 0
 
     @property
     def end(self) -> Milliseconds:
@@ -199,6 +201,8 @@ class TimelineMarker:
     position: Milliseconds
     name: str
     duration: Milliseconds = Decimal(1000) / 60  # 1 frame default
+    position_frame: int = 0
+    duration_frames: int = 1
 
 
 @dataclass(slots=True, frozen=True)
@@ -207,6 +211,7 @@ class BeatInfo:
 
     index: int
     time: Seconds
+    frame: int = 0
     date_range: DateRange | None = None
 
 
@@ -227,6 +232,7 @@ class TimelineProject:
 
     name: str
     duration: Milliseconds
+    duration_frames: int
     frame_rate: int
     dimensions: Dimensions
     elements: list[TimelineElement]
@@ -234,7 +240,7 @@ class TimelineProject:
     beats: list[BeatInfo]
     photo_placements: list[PhotoPlacement]
 
-    # Timing parameters
+    # Remaining fields with default values
     gap_duration: Milliseconds = Decimal(0)
     start_offset_beats: int = 0
     end_offset_beats: int = 0
