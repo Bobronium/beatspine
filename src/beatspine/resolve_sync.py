@@ -438,9 +438,10 @@ class ResolveSync:
 
                 media_item = media_items[element.asset.uid]
                 start_frame = int(element.time_range.start / 1000 * project.frame_rate)
+                # element.time_range.duration is Decimal (Milliseconds)
+                # project.frame_rate is int
                 duration_frames = int(
-                    # I have no idea where did 2 came from, but it seems to work perfectly with it.
-                    (element.time_range.duration / 1000 * project.frame_rate) / 2
+                    element.time_range.duration / Decimal(1000) * Decimal(project.frame_rate)
                 )
 
                 clip_info = {
@@ -477,6 +478,10 @@ class ResolveSync:
         self, timeline: fusionscript.Timeline, project: TimelineProject
     ) -> None:
         """Perform differential synchronization of beat markers."""
+        # Calculate gap in frames
+        # project.gap_duration is in ms. Convert to seconds, then multiply by frame rate.
+        gap_frames = int(Decimal(project.gap_duration) / 1000 * Decimal(project.frame_rate))
+
         # Catalog existing beatspine beat markers
         existing_markers = timeline.GetMarkers()
         current_beat_markers: dict[int, float] = {}  # beat_index -> frame_position
@@ -492,10 +497,11 @@ class ResolveSync:
                     timeline.DeleteMarkerAtFrame(frame_id)
 
         # Compute required changes
-        target_markers: dict[int, float] = {}
+        target_markers: dict[int, float] = {} # Storing target frames as float for consistency with current_beat_markers
         for beat in project.beats:
-            frame_position = int(beat.time * project.frame_rate)
-            target_markers[beat.index] = frame_position
+            # Use beat.frame (frame number of beat without gap) and add gap_frames
+            target_frame = beat.frame + gap_frames
+            target_markers[beat.index] = float(target_frame) # Store as float
 
         current_indices = set(current_beat_markers.keys())
         target_indices = set(target_markers.keys())

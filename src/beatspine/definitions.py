@@ -207,6 +207,7 @@ class BeatInfo:
 
     index: int
     time: Seconds
+    frame: int = 0
     date_range: DateRange | None = None
 
 

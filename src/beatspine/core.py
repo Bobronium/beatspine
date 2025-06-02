@@ -214,22 +214,18 @@ def cluster_photos_by_minimum_gap(
 
 
 def calculate_element_durations(
-    beats: list[Seconds], total_duration: Seconds
-) -> list[Seconds]:
-    """Calculate duration for each beat position using exact offset differences."""
-    durations: list[Seconds] = []
-
-    for i in range(len(beats)):
-        if i < len(beats) - 1:
-            # Exact duration until next beat offset
-            duration = beats[i + 1] - beats[i]
+    beats_info: list[BeatInfo], total_frames: int
+) -> list[int]:
+    """Calculate duration for each beat position in frames."""
+    durations_in_frames: list[int] = []
+    for i in range(len(beats_info)):
+        if i < len(beats_info) - 1:
+            duration = beats_info[i + 1].frame - beats_info[i].frame
         else:
-            # Last beat - exact remaining time
-            duration = total_duration - beats[i]
-
-        durations.append(duration)
-
-    return durations
+            # Last beat
+            duration = total_frames - beats_info[i].frame
+        durations_in_frames.append(duration)
+    return durations_in_frames
 
 
 def map_photos_to_beats_original(
@@ -674,7 +670,7 @@ def create_timeline_project(
     beat_times = [Decimal(i) * beat_duration for i in range(num_beats)]
 
     # Create beat info objects (without date ranges yet)
-    beats = [BeatInfo(index=i, time=time) for i, time in enumerate(beat_times)]
+    beats = [BeatInfo(index=i, time=time, frame=int(time * frame_rate)) for i, time in enumerate(beat_times)]
 
     echo(f"Generated {num_beats} beats at {bpm} BPM")
 
@@ -695,7 +691,7 @@ def create_timeline_project(
         photo_metadata, beats, start_date, end_date, placements
     )
     beats = [
-        BeatInfo(index=beat.index, time=beat.time, date_range=date_ranges[i])
+        BeatInfo(index=beat.index, time=beat.time, frame=beat.frame, date_range=date_ranges[i])
         for i, beat in enumerate(beats)
     ]
 
@@ -714,8 +710,9 @@ def create_timeline_project(
     elements: list[TimelineElement] = []
     markers: list[TimelineMarker] = []
 
-    # Calculate element durations
-    element_durations = calculate_element_durations(beat_times, duration_sec)
+    # Calculate total project frames and element durations in frames
+    total_project_frames = int(Decimal(duration_sec) * Decimal(frame_rate))
+    element_frame_durations = calculate_element_durations(beats, total_project_frames)
 
     # Create audio track element
     audio_asset = MediaAsset.from_audio(
@@ -735,15 +732,25 @@ def create_timeline_project(
 
     # Create photo elements
     for placement in placements:
-        beat_start_sec = beats[placement.beat_index].time
-        duration_sec = element_durations[placement.beat_index]
+        # Frame-based calculations for TimeRange
+        beat_start_frame = beats[placement.beat_index].frame
+        # gap_sec is Decimal, frame_rate is int
+        gap_frames = int(gap_sec * Decimal(frame_rate))
+        element_start_frame_final = beat_start_frame + gap_frames
+        # Ensure start_milliseconds is Decimal for TimeRange
+        start_milliseconds = (Decimal(element_start_frame_final) / Decimal(frame_rate)) * Decimal(1000)
+
+        # Use the new element_frame_durations
+        duration_in_frames = element_frame_durations[placement.beat_index]
+        # Ensure duration_milliseconds is Decimal for TimeRange
+        duration_milliseconds = (Decimal(duration_in_frames) / Decimal(frame_rate)) * Decimal(1000)
 
         elements.append(
             TimelineElement(
                 asset=placement.asset,
                 time_range=TimeRange(
-                    start=beat_start_sec * 1000 + gap_sec * 1000,
-                    duration=duration_sec * 1000,
+                    start=start_milliseconds,
+                    duration=duration_milliseconds,
                 ),
                 track=1,
                 media_type=MediaType.VIDEO,
@@ -760,9 +767,18 @@ def create_timeline_project(
     effective_beats = beats[start_offset_beats : len(beats) - end_offset_beats]
     for i, beat in enumerate(effective_beats):
         absolute_beat_index = i + start_offset_beats
+
+        # Frame-based calculation for marker position
+        beat_frame = beat.frame  # beat is a BeatInfo object
+        # gap_sec is Decimal, frame_rate is int
+        gap_frames = int(gap_sec * Decimal(frame_rate))
+        marker_frame_final = beat_frame + gap_frames
+        # Ensure position_milliseconds is Decimal for TimelineMarker
+        position_milliseconds = (Decimal(marker_frame_final) / Decimal(frame_rate)) * Decimal(1000)
+
         markers.append(
             TimelineMarker(
-                position=beat.time * 1000 + gap_sec * 1000,
+                position=position_milliseconds,
                 name=f"Beat {absolute_beat_index + 1}",
             )
         )
